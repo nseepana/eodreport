@@ -1,0 +1,12 @@
+[Unit]
+Description=Kite pre-market snapshot — NSE gap/breadth → MongoDB premarket_reports (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/eodreport
+EnvironmentFile=-/root/eodreport/.env
+ExecStart=/root/eodreport/.venv/bin/python /root/eodreport/generate_premarket_report.py
+StandardOutput=append:/root/eodreport/premarket-report.log
+StandardError=append:/root/eodreport/premarket-report.log

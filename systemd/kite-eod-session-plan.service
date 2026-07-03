@@ -1,0 +1,12 @@
+[Unit]
+Description=Kite EOD session plan — Perplexity + NSE/Kite → MongoDB eod_reports (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/eodreport
+EnvironmentFile=-/root/eodreport/.env
+ExecStart=/root/eodreport/.venv/bin/python /root/eodreport/generate_eod_report.py --date today
+StandardOutput=append:/root/eodreport/eod-report.log
+StandardError=append:/root/eodreport/eod-report.log

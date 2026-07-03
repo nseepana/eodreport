@@ -1,0 +1,9 @@
+[Unit]
+Description=Pre-market snapshot at 09:12 IST on weekdays (mid NSE pre-open auction)
+
+[Timer]
+OnCalendar=Mon-Fri *-*-* 09:12:00 Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target
