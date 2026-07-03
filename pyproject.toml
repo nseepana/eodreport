@@ -1,0 +1,5 @@
+[project]
+name = "kite-eod-report"
+version = "1.0.0"
+description = "NSE/BSE EOD session-plan and pre-market report generator (Perplexity + Kite + NSE)."
+requires-python = ">=3.10"
