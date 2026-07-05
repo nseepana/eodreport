@@ -80,10 +80,40 @@ NSE needs browser-like TLS + warmed cookies → uses `curl_cffi` (Chrome fingerp
 .venv/bin/python fao_premarket_bias.py
 .venv/bin/python fao_premarket_bias.py <folder> --top 15
 .venv/bin/python fao_premarket_bias.py <folder> --json
+.venv/bin/python fao_premarket_bias.py <folder> --db     # upsert into Mongo fao_daily_bias
 
-# Full chain (what the timer runs)
+# Full chain (what the timer runs — downloads full bundle, parses, writes to Mongo)
 ./cron_fao_reports.sh
 ```
+
+### MongoDB (`--db`)
+
+`--db` upserts the parsed report (delete-then-insert by `reportDate`, mirroring
+`premarket_store.py`) into `<EOD_REPORT_MONGODB_DB>.fao_daily_bias` using the
+`MONGODB_URI` from `.env`. The scheduled `cron_fao_reports.sh` sets `FAO_DB=1`
+by default. Document shape:
+
+```jsonc
+{
+  "id": "<uuid>",
+  "reportDate": "2026-07-03",          // derived from the bundle folder DDMMYYYY
+  "generatedAt": "<iso utc>",
+  "report": {
+    "positioning": [ { "participant": "FII", "idx_fut_net": -250767,
+                       "idx_long_pct": 9.6, "bias": "bearish", "stk_fut_net": 547349 }, ... ],
+    "ban_list": [],
+    "high_margin": [ { "symbol": "ADANIENT", "additional_elm_pct": 15, "total_elm_pct": 20.25 } ],
+    "most_volatile": [ { "symbol": "KAYNES", "annualised_vol_pct": 67.54 }, ... ],
+    "summary": { "fii_index_bias": "bearish", "fii_index_long_pct": 9.6,
+                 "fii_index_net": -250767, "pro_index_bias": "neutral",
+                 "ban_count": 0, "most_volatile_top": "KAYNES" }
+  },
+  "createdAt": "<utc datetime>"
+}
+```
+
+Export/sync like the other collections: `./pull_latest_reports.sh` can be
+pointed at it, or query `fao_daily_bias` directly.
 
 ---
 

@@ -27,8 +27,10 @@ Usage:
   python3 fao_premarket_bias.py <folder>
   python3 fao_premarket_bias.py <folder> --top 15
   python3 fao_premarket_bias.py <folder> --json
+  python3 fao_premarket_bias.py <folder> --db      # upsert into Mongo fao_daily_bias
 
-Human-readable table on stdout; --json emits a machine-readable dict.
+Human-readable table on stdout; --json emits a machine-readable dict;
+--db upserts the report into MongoDB (delete-then-insert by reportDate).
 """
 
 import argparse
@@ -37,12 +39,16 @@ import glob
 import json
 import os
 import pathlib
+import re
 import sys
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _DEFAULT_PARENT = str(_REPO_ROOT / "pulled" / "nse-fao")
+_DB_COLLECTION = "fao_daily_bias"
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +342,73 @@ def to_dict(b: Bundle, top: int) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# MongoDB persistence (mirrors eod_report/premarket_store.py conventions)
+# ---------------------------------------------------------------------------
+
+
+def report_date_from_folder(folder: str) -> str | None:
+    """Reports-Archives-Multiple-DDMMYYYY → ISO 'YYYY-MM-DD'."""
+    m = re.search(r"(\d{2})(\d{2})(\d{4})$", os.path.basename(folder.rstrip("/")))
+    if not m:
+        return None
+    dd, mm, yyyy = m.groups()
+    return f"{yyyy}-{mm}-{dd}"
+
+
+def build_report(b: Bundle, top: int) -> dict[str, Any]:
+    """to_dict payload + a flat summary block for quick querying/rendering."""
+    fii = next((r for r in b.participants_oi if r.client_type.upper() == "FII"), None)
+    pro = next((r for r in b.participants_oi if r.client_type.upper() == "PRO"), None)
+    report = to_dict(b, top)
+    report["summary"] = {
+        "fii_index_bias": fii.bias() if fii else None,
+        "fii_index_long_pct": fii.idx_long_pct if fii else None,
+        "fii_index_net": fii.idx_net if fii else None,
+        "pro_index_bias": pro.bias() if pro else None,
+        "ban_count": len(b.banned),
+        "most_volatile_top": (b.volatility[0][0] if b.volatility else None),
+    }
+    return report
+
+
+def save_bias_to_mongo(
+    b: Bundle, top: int, collection: str = _DB_COLLECTION,
+) -> tuple[bool, str]:
+    """Upsert (delete-then-insert by reportDate) the bias report into Mongo.
+    Reuses EodReportConfig for MONGODB_URI / DB name. Returns (ok, id-or-error)."""
+    try:
+        from eod_report.config import EodReportConfig
+        from pymongo import MongoClient
+    except ImportError as exc:  # noqa: BLE001
+        return False, f"missing dependency ({exc}) — run: .venv/bin/pip install pymongo"
+
+    cfg = EodReportConfig.from_env()
+    if not cfg.mongodb_uri:
+        return False, "MONGODB_URI not set in .env"
+
+    report_date = report_date_from_folder(b.folder)
+    if not report_date:
+        return False, f"could not derive reportDate from folder: {b.folder}"
+
+    record = {
+        "id": str(uuid.uuid4()),
+        "reportDate": report_date,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "report": build_report(b, top),
+        "createdAt": datetime.now(timezone.utc),
+    }
+
+    client = MongoClient(cfg.mongodb_uri, serverSelectionTimeoutMS=8000)
+    try:
+        coll = client[cfg.mongodb_db][collection]
+        coll.delete_many({"reportDate": report_date})
+        coll.insert_one(record)
+    finally:
+        client.close()
+    return True, f"{cfg.mongodb_db}.{collection} reportDate={report_date} id={record['id']}"
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -349,6 +422,11 @@ def main() -> int:
     ap.add_argument("--top", "-n", type=int, default=10,
                     help="Rows to show for margin / volatility lists (default 10)")
     ap.add_argument("--json", "-j", action="store_true", help="Emit JSON instead of a table")
+    ap.add_argument("--db", action="store_true",
+                    help=f"Upsert the bias report into MongoDB ({_DB_COLLECTION}); "
+                         "reads MONGODB_URI from .env")
+    ap.add_argument("--db-collection", default=_DB_COLLECTION,
+                    help=f"MongoDB collection name (default: {_DB_COLLECTION})")
     args = ap.parse_args()
 
     folder = args.folder or latest_bundle(_DEFAULT_PARENT)
@@ -360,9 +438,17 @@ def main() -> int:
     bundle = load_bundle(folder)
 
     if args.json:
-        print(json.dumps(to_dict(bundle, args.top), indent=2))
+        print(json.dumps(build_report(bundle, args.top), indent=2))
     else:
         print(render_text(bundle, args.top))
+
+    if args.db:
+        ok, detail = save_bias_to_mongo(bundle, args.top, args.db_collection)
+        if ok:
+            print(f"DB: upserted → {detail}", file=sys.stderr)
+        else:
+            print(f"DB error: {detail}", file=sys.stderr)
+            return 2
     return 0
 
 

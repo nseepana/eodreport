@@ -11,6 +11,7 @@
 #   FAO_ONLY   comma-separated report keys (only used when FAO_ALL != 1)
 #   FAO_OUT    parent output dir; default = downloader built-in (repo/pulled/nse-fao)
 #   FAO_ALL=1  pull the full bundle (default here); unset to use FAO_ONLY lean set
+#   FAO_DB=1   upsert the parsed bias report into MongoDB (fao_daily_bias); default on
 
 set -euo pipefail
 
@@ -50,7 +51,9 @@ echo "bundle folder: ${FOLDER}"
 
 if [[ -d "${FOLDER}" ]]; then
     echo "----- pre-market bias -----"
-    ${PYTHON_BIN} fao_premarket_bias.py "${FOLDER}" || true
+    BIAS_ARGS=("${FOLDER}")
+    [[ "${FAO_DB:-1}" == "1" ]] && BIAS_ARGS+=(--db)
+    ${PYTHON_BIN} fao_premarket_bias.py "${BIAS_ARGS[@]}" || true
 else
     echo "WARN: no bundle folder produced (nothing published yet?)"
 fi
