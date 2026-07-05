@@ -56,6 +56,11 @@ KITE_SECTORS = [
         "Nifty Realty": "NIFTY REALTY",
         "Nifty Energy": "NIFTY ENERGY",
         "Nifty PSU Bank": "NIFTY PSU BANK",
+        "Nifty Private Bank": "NIFTY PVT BANK,NIFTY PRIVATE BANK",
+        "Nifty Oil & Gas": "NIFTY OIL AND GAS,NIFTY OIL & GAS",
+        "Nifty Healthcare": "NIFTY HEALTHCARE,NIFTY HEALTHCARE INDEX",
+        "Nifty Consumer Durables": "NIFTY CONSR DURBL,NIFTY CONSUMER DURABLES",
+        "Nifty Media": "NIFTY MEDIA",
     }.items()
 ]
 
