@@ -17,7 +17,8 @@ from eod_report.market_data import (
     format_facts_for_prompt,
     has_core_indian_market_data,
 )
-from eod_report.session import data_session_for_target, is_live_data_session, resolve_target_session
+from eod_report.session import data_session_for_target, is_live_data_session, ist_now, resolve_target_session
+from eod_report.trading_calendar import is_trading_day
 from eod_report.merge import apply_enrichment, apply_live_facts, normalize_report
 from eod_report.parse_json import parse_eod_report_json
 from eod_report.perplexity import call_perplexity
@@ -36,6 +37,11 @@ def main(date: str, dry_run: bool) -> None:
     if not cfg.perplexity_configured():
         click.echo("PERPLEXITY_API_KEY is not configured.", err=True)
         sys.exit(1)
+
+    now = ist_now()
+    if not is_trading_day("NSE", now):
+        log.info("NSE closed today (%s) — skipping EOD session plan", now.strftime("%Y-%m-%d"))
+        return
 
     target = resolve_target_session(date)
     data_session = data_session_for_target(target)

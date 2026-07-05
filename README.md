@@ -8,10 +8,10 @@ Cron-friendly generators for the **kiteob Market Report**: EOD session plans and
 |--------|----------------|-------------------|------------|
 | `generate_eod_report.py` | **16:00** Mon–Fri | `eod_reports` | `GET/POST /api/eod-report` |
 | `generate_premarket_report.py` | **09:12** Mon–Fri | `premarket_reports` | `GET /api/market/premarket/report` |
-| `cron_fao_reports.sh` | **21:15** Mon–Fri | `fao_daily_bias` | — |
+| `cron_fao_reports.sh` | **21:15** Mon–Fri | `fao_daily_bias` | `GET /api/fao-bias` |
 
 - **EOD** — full session plan (Perplexity + NSE/Kite enrichment). Needs `PERPLEXITY_API_KEY`.
-- **Pre-market** — gap/breadth snapshot only (no LLM). Best inside NSE pre-open **09:00–09:15**.
+- **Pre-market** — gap/breadth snapshot only (no LLM). Best inside NSE pre-open **09:00–09:15**. Embeds prior session **F&O bias** from `fao_daily_bias` when available.
 - **F&O reports** — pulls the daily NSE F&O archive bundle from the CDN, prints a positioning / trade-filter / volatility table, and upserts it to the `fao_daily_bias` collection (`--db`). See `NSE_FAO_REPORTS.md`.
 
 Live pre-open UI still polls `/api/market/premarket` (NSE on demand). Stored snapshots freeze the auction for history / post-09:15 display.
@@ -38,6 +38,9 @@ cp .env.example .env   # fill in keys — do not commit .env
 ```
 
 ### Pull / sync stored reports (`pull_latest_reports.sh`)
+
+**Manual only** — no systemd timer. Use when you need local JSON exports or to mirror
+docs into a second Mongo cluster (`MONGODB_URI_IS`).
 
 Exports the generated report docs **out of MongoDB** into `./pulled/*.json`, and
 optionally mirrors them into a second cluster (`MONGODB_URI_IS`).
@@ -112,12 +115,15 @@ ssh hostinger-new 'systemctl start kite-eod-session-plan.service'
 ssh hostinger-new 'systemctl start kite-premarket-snapshot.service'
 ssh hostinger-new 'systemctl start kite-fao-reports.service'
 
-# Logs
+# Logs (use -n, not -20, when tailing multiple files)
+ssh hostinger-new 'tail -n 20 /root/eodreport/premarket-report.log'
+ssh hostinger-new 'tail -n 20 /root/eodreport/logs/fao-reports-$(TZ=Asia/Kolkata date +%F).log'
 ssh hostinger-new 'tail -f /root/eodreport/eod-report.log'
-ssh hostinger-new 'tail -f /root/eodreport/premarket-report.log'
 ```
 
 Timers use `Persistent=true`: if the VPS was down at trigger time, systemd runs the job once after boot.
+
+**Exchange holidays:** generators and `cron_fao_reports.sh` no-op when `trading_holidays.txt` marks the day closed (weekends always skipped). Extend that file from NSE circulars.
 
 ## Layout
 

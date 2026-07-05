@@ -14,8 +14,11 @@ import sys
 import click
 
 from eod_report.config import EodReportConfig
+from eod_report.fao_bias_store import load_fao_bias
 from eod_report.premarket_data import fetch_premarket_report
 from eod_report.premarket_store import save_premarket_report
+from eod_report.session import ist_now, prev_trading_session_iso
+from eod_report.trading_calendar import is_trading_day
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("generate_premarket_report")
@@ -25,9 +28,22 @@ log = logging.getLogger("generate_premarket_report")
 @click.option("--dry-run", is_flag=True, help="Fetch and print JSON without saving to MongoDB.")
 def main(dry_run: bool) -> None:
     cfg = EodReportConfig.from_env()
-    report = fetch_premarket_report()
+    now = ist_now()
+    if not is_trading_day("NSE", now):
+        log.info("NSE closed today (%s) — skipping premarket snapshot", now.strftime("%Y-%m-%d"))
+        return
+
+    report = fetch_premarket_report(now)
     report_date = str(report.get("report_date") or "")
     generated_at = str(report.get("as_of") or "")
+
+    fao_date = prev_trading_session_iso(report_date)
+    fao = load_fao_bias(cfg, fao_date)
+    if fao:
+        report["fao_bias"] = fao
+        log.info("attached fao_bias from %s", fao_date)
+    else:
+        log.warning("no fao_daily_bias for %s (prior session)", fao_date)
 
     window = report.get("window") or {}
     if not window.get("in_pre_open_window"):

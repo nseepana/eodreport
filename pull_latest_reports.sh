@@ -7,7 +7,7 @@
 #   ./pull_latest_reports.sh --premarket     # premarket_reports only
 #   ./pull_latest_reports.sh --date 2026-07-03
 #   ./pull_latest_reports.sh --out-dir ./data
-#   ./pull_latest_reports.sh --sync          # also push to MONGODB_URI_IS
+#   ./pull_latest_reports.sh --sync          # also push to MONGODB_URI_IS (manual — no timer)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,7 +32,7 @@ Options:
   --date YYYY-MM-DD   Specific session date (default: newest document)
                       Use "latest" / "newest" to force the newest document
   --out-dir DIR   Output directory (default: ./pulled)
-  --sync          Upsert pulled report(s) into MONGODB_URI_IS (same DB name)
+  --sync          Upsert pulled report(s) into MONGODB_URI_IS (manual — no systemd timer)
   -h, --help      Show this help
 
 Requires .env with MONGODB_URI (and optional EOD_REPORT_MONGODB_DB).

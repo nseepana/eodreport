@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/root/eodreport
+EnvironmentFile=-/root/eodreport/.env
 Environment=FAO_ALL=1
 ExecStart=/usr/bin/env bash /root/eodreport/cron_fao_reports.sh
 StandardOutput=append:/root/eodreport/fao-reports.log

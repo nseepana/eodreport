@@ -44,9 +44,20 @@ def prev_weekday_iso(ymd: str) -> str:
 
 
 def next_trading_session_iso(from_iso: str) -> str:
+    from eod_report.trading_calendar import is_trading_day
+
     d = _parse_iso(from_iso) + timedelta(days=1)
-    while d.weekday() >= 5:
+    while not is_trading_day("NSE", d):
         d += timedelta(days=1)
+    return _fmt_iso(d)
+
+
+def prev_trading_session_iso(ymd: str) -> str:
+    from eod_report.trading_calendar import is_trading_day
+
+    d = _parse_iso(ymd) - timedelta(days=1)
+    while not is_trading_day("NSE", d):
+        d -= timedelta(days=1)
     return _fmt_iso(d)
 
 

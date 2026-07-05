@@ -37,6 +37,17 @@ exec >>"${LOG_FILE}" 2>&1
 echo "===== $(TZ=Asia/Kolkata date '+%Y-%m-%d %H:%M:%S %z') start ====="
 cd "${ROOT}"
 
+if ! ${PYTHON_BIN} -c "
+from eod_report.session import ist_now
+from eod_report.trading_calendar import is_trading_day
+import sys
+sys.exit(0 if is_trading_day('NSE', ist_now()) else 1)
+"; then
+    echo "NSE closed today — skipping F&O pull"
+    echo "===== $(TZ=Asia/Kolkata date '+%Y-%m-%d %H:%M:%S %z') done (holiday) ====="
+    exit 0
+fi
+
 DL_ARGS=()
 [[ -n "${FAO_DATE:-}" ]] && DL_ARGS+=(--date "${FAO_DATE}")
 [[ -n "${FAO_OUT:-}" ]]  && DL_ARGS+=(--out "${FAO_OUT}")

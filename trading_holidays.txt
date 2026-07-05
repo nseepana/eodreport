@@ -1,0 +1,13 @@
+# Exchange trading holidays — read by eod_report.trading_calendar.is_trading_day().
+#
+# Format: one date per line, ``YYYY-MM-DD [EXCHANGE[,EXCHANGE]]``
+#   - no exchange token  -> ALL exchanges closed that day
+#   - with token(s)      -> only those exchanges closed
+#
+# Maintain from the official NSE and MCX holiday circulars. Weekends are always
+# closed and never listed here.
+#
+# 2026 — fixed national holidays (extend with movable ones from circulars):
+2026-01-26   # Republic Day
+2026-10-02   # Gandhi Jayanti
+2026-12-25   # Christmas
