@@ -1,0 +1,9 @@
+[Unit]
+Description=NSE F&O reports pull at 21:15 IST on weekdays (after participant-OI publish)
+
+[Timer]
+OnCalendar=Mon-Fri *-*-* 21:15:00 Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target
