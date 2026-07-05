@@ -14,6 +14,12 @@ applicable ELM margins, daily volatility) and prints three things:
                          Check before entering any single-stock F&O trade.
   3. Volatility regime — most / least volatile underlyings by annualised vol,
                          for position sizing.
+  4. Crowded names     — largest notional OI (ban-watch proxy, from combined OI).
+
+Scope note: OI buildup + option-chain (PCR / max pain / call-put walls) are NOT
+computed here — those overlap with what Kite Connect serves live, so they are
+sourced from Kite in the app instead. This agent only carries the exchange-only
+aggregates no broker exposes: participant positioning, ban list, MWPL, vol, ELM.
 
 Files consumed (auto-discovered by name inside the folder):
   fao_participant_oi_*.csv    participant open interest  (standing positions)
@@ -21,6 +27,7 @@ Files consumed (auto-discovered by name inside the folder):
   fo_secban_*.csv             securities in F&O ban       [optional]
   ael_*.csv                   applicable ELM margin %     [optional]
   FOVOLT_*.csv                daily / annualised vol      [optional]
+  combineoi_deleq_*.csv       combined notional / futures-equiv OI [optional]
 
 Usage:
   python3 fao_premarket_bias.py                # newest bundle under ./pulled/nse-fao
@@ -227,6 +234,29 @@ def parse_volatility(path: str) -> list[tuple[str, float]]:
 
 
 # ---------------------------------------------------------------------------
+# 4. Combined OI (deliverable-equivalent) — largest aggregate positions
+#    (OI buildup + option-chain PCR/max-pain now sourced live from Kite instead)
+# ---------------------------------------------------------------------------
+
+
+def parse_notional_oi(path: str, top: int = 15) -> list[dict[str, Any]]:
+    """Return the largest names by notional OI (crowded-book / ban-watch proxy)."""
+    rows = _read_rows(path, skip=1)
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if len(r) < 6:
+            continue
+        sym = r[3]
+        notional = _to_float(r[4])
+        fut_eq = _to_float(r[5])
+        if not sym or notional is None:
+            continue
+        out.append({"symbol": sym, "notional_oi": notional, "fut_equiv_oi": fut_eq})
+    out.sort(key=lambda x: -(x["notional_oi"] or 0))
+    return out[:top]
+
+
+# ---------------------------------------------------------------------------
 # Assemble
 # ---------------------------------------------------------------------------
 
@@ -239,9 +269,10 @@ class Bundle:
     banned: list[str] = field(default_factory=list)
     high_margin: list[tuple[str, float, float]] = field(default_factory=list)
     volatility: list[tuple[str, float]] = field(default_factory=list)
+    notional_oi: list[dict[str, Any]] = field(default_factory=list)
 
 
-def load_bundle(folder: str) -> Bundle:
+def load_bundle(folder: str, top: int = 15) -> Bundle:
     b = Bundle(folder=folder)
     if (p := _find_one(folder, "fao_participant_oi_*.csv")):
         b.participants_oi = parse_participants(p)
@@ -253,6 +284,8 @@ def load_bundle(folder: str) -> Bundle:
         b.high_margin = parse_margins(p, additional_only=True)
     if (p := _find_one(folder, "FOVOLT_*.csv")):
         b.volatility = parse_volatility(p)
+    if (p := _find_one(folder, "combineoi_deleq_*.csv")):
+        b.notional_oi = parse_notional_oi(p, top=top)
     return b
 
 
@@ -314,6 +347,14 @@ def render_text(b: Bundle, top: int) -> str:
     else:
         lines.append("   (no volatility file found)")
 
+    lines.append("\n4. CROWDED NAMES (largest notional OI — ban watch)")
+    if b.notional_oi:
+        lines.append(f"   {'Symbol':<14} {'Notional OI':>18}")
+        for x in b.notional_oi[:top]:
+            lines.append(f"   {x['symbol']:<14} {x['notional_oi']:>18,.0f}")
+    else:
+        lines.append("   (no combined-OI file found)")
+
     return "\n".join(lines)
 
 
@@ -338,6 +379,7 @@ def to_dict(b: Bundle, top: int) -> dict[str, Any]:
         "most_volatile": [
             {"symbol": s, "annualised_vol_pct": v} for s, v in b.volatility[:top]
         ],
+        "notional_oi": b.notional_oi[:top],
     }
 
 
@@ -367,6 +409,7 @@ def build_report(b: Bundle, top: int) -> dict[str, Any]:
         "pro_index_bias": pro.bias() if pro else None,
         "ban_count": len(b.banned),
         "most_volatile_top": (b.volatility[0][0] if b.volatility else None),
+        "crowded_top": (b.notional_oi[0]["symbol"] if b.notional_oi else None),
     }
     return report
 
@@ -435,7 +478,7 @@ def main() -> int:
               f"Run fao_download_reports.py first, or pass a folder.", file=sys.stderr)
         return 1
 
-    bundle = load_bundle(folder)
+    bundle = load_bundle(folder, top=args.top)
 
     if args.json:
         print(json.dumps(build_report(bundle, args.top), indent=2))
