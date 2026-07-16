@@ -2,7 +2,7 @@
 # Pull latest EOD / pre-market reports from MongoDB to local JSON files.
 #
 # Usage:
-#   ./pull_latest_reports.sh                 # both collections, newest docs
+#   ./pull_latest_reports.sh                 # both collections, newest session
 #   ./pull_latest_reports.sh --eod           # eod_reports only
 #   ./pull_latest_reports.sh --premarket     # premarket_reports only
 #   ./pull_latest_reports.sh --date 2026-07-03
@@ -29,8 +29,8 @@ Options:
   --eod           Pull EOD session plan only
   --premarket     Pull pre-market snapshot only
   --all           Pull both (default when neither --eod nor --premarket)
-  --date YYYY-MM-DD   Specific session date (default: newest document)
-                      Use "latest" / "newest" to force the newest document
+  --date YYYY-MM-DD   Specific session date (default: newest reportDate)
+                      Use "latest" / "newest" to force the newest reportDate
   --out-dir DIR   Output directory (default: ./pulled)
   --sync          Upsert pulled report(s) into MONGODB_URI_IS (manual — no systemd timer)
   -h, --help      Show this help
@@ -133,8 +133,15 @@ def fetch_one(collection: str) -> dict[str, Any] | None:
     coll = db[collection]
     try:
         if report_date:
+            # Pinned date: newest GENERATION of that session (regenerating a day
+            # should supersede the earlier attempt).
             return coll.find({"reportDate": report_date}).sort("_id", -1).limit(1).next()
-        return coll.find({}).sort("_id", -1).limit(1).next()
+        # No date: newest SESSION, not newest write. Sorting by _id alone meant
+        # backfilling an older report made it "latest" — regenerating 2026-07-16
+        # after 2026-07-17 shadowed the current plan and --sync pushed the stale
+        # day to MONGODB_URI_IS. reportDate is YYYY-MM-DD, so it sorts
+        # lexicographically; _id breaks ties toward the newest generation.
+        return coll.find({}).sort([("reportDate", -1), ("_id", -1)]).limit(1).next()
     except StopIteration:
         return None
 
