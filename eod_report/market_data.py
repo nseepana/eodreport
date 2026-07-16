@@ -613,17 +613,23 @@ def fetch_live_market_facts(access_token: str | None, report_date: str = "today"
     elif hs:
         indices["sensex"] = hs
 
+    # Keep the FULL fact, same as nifty50/bank_nifty/sensex above. These two used
+    # to be narrowed to {"change_pct": ...}, which discarded the OHLC that
+    # hist_fact/first_ohlc had already fetched — Kite serves complete bars for
+    # both (MIDCAP 100 and SMLCAP 100). kiteob's Index recap renders a shared
+    # Open/High/Low/Close table across all five rows, so the narrowed pair showed
+    # four em-dashes each and read as missing data.
     for key, ik in (("nifty_midcap", KITE_INDICES["nifty_midcap"]), ("nifty_smallcap", KITE_INDICES["nifty_smallcap"])):
         h = hist_fact(ik)
         row = first_ohlc(ik)
         if prefer_completed_session_bars and h and h.get("change_pct") is not None:
-            indices[key] = {"change_pct": h["change_pct"]}
+            indices[key] = h
         elif row:
             fact = kite_to_index_fact(row)
             if fact.get("change_pct") is not None:
-                indices[key] = {"change_pct": fact["change_pct"]}
+                indices[key] = fact
         elif h and h.get("change_pct") is not None:
-            indices[key] = {"change_pct": h["change_pct"]}
+            indices[key] = h
 
     if not has_core_indian_market_data({"indices": indices}):
         if fetch_yahoo_index_fact(YAHOO_NIFTY_50, session_date):
