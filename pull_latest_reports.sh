@@ -8,7 +8,7 @@
 #   ./pull_latest_reports.sh --fao           # fao_daily_bias only
 #   ./pull_latest_reports.sh --date 2026-07-03
 #   ./pull_latest_reports.sh --out-dir ./data
-#   ./pull_latest_reports.sh --sync          # also push to MONGODB_URI_IS (manual — no timer)
+#   ./pull_latest_reports.sh --sync          # also push to MONGODB_URI_IS (runs automatically via ExecStartPost in the systemd services)
 #
 # Note the collections are dated on DIFFERENT clocks, so a bare run will often
 # pull different dates per collection — that is correct, not a bug:
@@ -42,7 +42,7 @@ Options:
   --date YYYY-MM-DD   Specific session date (default: newest reportDate)
                       Use "latest" / "newest" to force the newest reportDate
   --out-dir DIR   Output directory (default: ./pulled)
-  --sync          Upsert pulled report(s) into MONGODB_URI_IS (manual — no systemd timer)
+  --sync          Upsert pulled report(s) into MONGODB_URI_IS (also run automatically after each generator via ExecStartPost)
   -h, --help      Show this help
 
 Requires .env with MONGODB_URI (and optional EOD_REPORT_MONGODB_DB).

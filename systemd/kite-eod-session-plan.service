@@ -8,5 +8,6 @@ Type=oneshot
 WorkingDirectory=/root/eodreport
 EnvironmentFile=-/root/eodreport/.env
 ExecStart=/root/eodreport/.venv/bin/python /root/eodreport/generate_eod_report.py --date today
+ExecStartPost=-/root/eodreport/pull_latest_reports.sh --eod --sync
 StandardOutput=append:/root/eodreport/eod-report.log
 StandardError=append:/root/eodreport/eod-report.log

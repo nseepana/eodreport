@@ -9,5 +9,6 @@ WorkingDirectory=/root/eodreport
 EnvironmentFile=-/root/eodreport/.env
 Environment=FAO_ALL=1
 ExecStart=/usr/bin/env bash /root/eodreport/cron_fao_reports.sh
+ExecStartPost=-/root/eodreport/pull_latest_reports.sh --fao --sync
 StandardOutput=append:/root/eodreport/fao-reports.log
 StandardError=append:/root/eodreport/fao-reports.log
