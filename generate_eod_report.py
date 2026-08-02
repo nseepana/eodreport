@@ -31,10 +31,17 @@ log = logging.getLogger("generate_eod_report")
 
 @click.command()
 @click.option("--date", default="today", help="Target session YYYY-MM-DD or 'today'.")
-@click.option("--dry-run", is_flag=True, help="Fetch data and call Perplexity but do not save to MongoDB.")
-def main(date: str, dry_run: bool) -> None:
+@click.option(
+    "--llm/--no-llm",
+    "use_llm",
+    default=False,
+    help="Call Perplexity for narrative fields (bias, theme, mover reasons). Default off: "
+    "a 25-session cross-check found no predictive value in the LLM fields (README).",
+)
+@click.option("--dry-run", is_flag=True, help="Fetch data and build the report but do not save to MongoDB.")
+def main(date: str, use_llm: bool, dry_run: bool) -> None:
     cfg = EodReportConfig.from_env()
-    if not cfg.perplexity_configured():
+    if use_llm and not cfg.perplexity_configured():
         click.echo("PERPLEXITY_API_KEY is not configured.", err=True)
         sys.exit(1)
 
@@ -65,9 +72,9 @@ def main(date: str, dry_run: bool) -> None:
         (enrichment.get("technical_levels") or {}).get("nifty50")
         or (enrichment.get("technical_levels") or {}).get("bank_nifty")
     )
-    if live_facts.get("live") and (not has_index or not has_tl):
+    if (live_facts.get("live") or not use_llm) and (not has_index or not has_tl):
         click.echo(
-            f"Insufficient live data (index={has_index}, technical_levels={has_tl}). "
+            f"Insufficient market data (index={has_index}, technical_levels={has_tl}). "
             "Check Kite token and NSE connectivity.",
             err=True,
         )
@@ -75,9 +82,13 @@ def main(date: str, dry_run: bool) -> None:
             click.echo(LOGIN_HINT, err=True)
         sys.exit(2)
 
-    enrichment_block = format_enrichment_for_prompt(enrichment)
-    if live_facts.get("live"):
-        user_content = f"""{format_facts_for_prompt(live_facts)}
+    base_report: dict = {}
+    cost = None
+    sources: list = []
+    if use_llm:
+        enrichment_block = format_enrichment_for_prompt(enrichment)
+        if live_facts.get("live"):
+            user_content = f"""{format_facts_for_prompt(live_facts)}
 
 {enrichment_block}
 
@@ -96,34 +107,37 @@ OVERNIGHT PLAN (tomorrow is the product — yesterday is context):
 6. Do not invent numbers. Use null when absent.
 
 Set session_date={live_facts['session_date']}, report_date={live_facts['report_date']}, next_session_date={live_facts['report_date']}. Return ONLY the JSON."""
-    else:
-        user_content = (
-            f"Generate a report FOR the NSE/BSE trading session on {live_facts['report_date']} (target), "
-            f"analyzed from the prior completed session {live_facts['session_date']}. "
-            f"Set session_date={live_facts['session_date']}, report_date={live_facts['report_date']}, "
-            f"next_session_date={live_facts['report_date']}. Return ONLY the JSON."
+        else:
+            user_content = (
+                f"Generate a report FOR the NSE/BSE trading session on {live_facts['report_date']} (target), "
+                f"analyzed from the prior completed session {live_facts['session_date']}. "
+                f"Set session_date={live_facts['session_date']}, report_date={live_facts['report_date']}, "
+                f"next_session_date={live_facts['report_date']}. Return ONLY the JSON."
+            )
+
+        pp = call_perplexity(
+            cfg,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=user_content,
+            session_date=live_facts.get("session_date"),
+            next_session_date=live_facts.get("report_date"),
         )
+        if pp.get("error"):
+            click.echo(f"Perplexity error: {pp['error']}", err=True)
+            sys.exit(3)
+        if pp.get("finish_reason") == "length":
+            click.echo("Model response truncated (token limit).", err=True)
+            sys.exit(3)
 
-    pp = call_perplexity(
-        cfg,
-        system_prompt=SYSTEM_PROMPT,
-        user_content=user_content,
-        session_date=live_facts.get("session_date"),
-        next_session_date=live_facts.get("report_date"),
-    )
-    if pp.get("error"):
-        click.echo(f"Perplexity error: {pp['error']}", err=True)
-        sys.exit(3)
-    if pp.get("finish_reason") == "length":
-        click.echo("Model response truncated (token limit).", err=True)
-        sys.exit(3)
-
-    parsed = parse_eod_report_json(pp.get("text", ""))
-    if not parsed.get("ok"):
-        reason = parsed.get("reason", "invalid")
-        detail = parsed.get("detail", "")
-        click.echo(f"JSON parse failed ({reason}): {detail}", err=True)
-        sys.exit(4)
+        parsed = parse_eod_report_json(pp.get("text", ""))
+        if not parsed.get("ok"):
+            reason = parsed.get("reason", "invalid")
+            detail = parsed.get("detail", "")
+            click.echo(f"JSON parse failed ({reason}): {detail}", err=True)
+            sys.exit(4)
+        base_report = parsed["value"]
+        cost = pp.get("cost")
+        sources = pp.get("sources") or []
 
     live_quote = None
     preopen = live_facts.get("preopen_index") or {}
@@ -135,11 +149,12 @@ Set session_date={live_facts['session_date']}, report_date={live_facts['report_d
 
     report = normalize_report(
         apply_enrichment(
-            apply_live_facts(parsed["value"], live_facts),
+            apply_live_facts(base_report, live_facts),
             enrichment,
             live_quote,
         )
     )
+    report["generation_mode"] = "llm" if use_llm else "deterministic"
 
     report_date = str(report.get("report_date") or live_facts["report_date"])
     generated_at = str(report.get("generated_at") or live_facts["fetched_at"])
@@ -150,9 +165,6 @@ Set session_date={live_facts['session_date']}, report_date={live_facts['report_d
             *(enrichment.get("computed_from") or []),
         ])),
     }
-
-    cost = pp.get("cost")
-    sources = pp.get("sources") or []
 
     if dry_run:
         click.echo(json.dumps({

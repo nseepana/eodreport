@@ -273,8 +273,7 @@ def _pick_mover_reason(
     llm: dict[str, Any],
     stock: str,
     side: str,
-    session_date: str | None,
-) -> str:
+) -> str | None:
     norm = re.sub(r"[^a-z0-9]", "", stock, flags=re.IGNORECASE).upper()
 
     def find(lst: list[Any] | None) -> str | None:
@@ -295,9 +294,7 @@ def _pick_mover_reason(
         return primary.strip()
     if alt and not _is_placeholder_reason(alt):
         return alt.strip()
-    date = session_date or "the session"
-    tone = "session leadership" if side == "gainers" else "session weakness"
-    return f"{stock} among Nifty 50 {tone} on {date}; no verified stock-specific catalyst."
+    return None
 
 
 def apply_enrichment(
@@ -312,16 +309,14 @@ def apply_enrichment(
     movers = enrich.get("top_movers")
     if movers:
         llm = dict(out.get("top_movers") or {})
-        session_date = out.get("session_date") if isinstance(out.get("session_date"), str) else None
+
+        def _mover(m: dict[str, Any], side: str) -> dict[str, Any]:
+            reason = _pick_mover_reason(llm, m["stock"], side)
+            return {**m, "reason": reason} if reason else dict(m)
+
         out["top_movers"] = {
-            "gainers": [
-                {**m, "reason": _pick_mover_reason(llm, m["stock"], "gainers", session_date)}
-                for m in movers.get("gainers", [])
-            ],
-            "losers": [
-                {**m, "reason": _pick_mover_reason(llm, m["stock"], "losers", session_date)}
-                for m in movers.get("losers", [])
-            ],
+            "gainers": [_mover(m, "gainers") for m in movers.get("gainers", [])],
+            "losers": [_mover(m, "losers") for m in movers.get("losers", [])],
         }
 
     ad = enrich.get("advance_decline")

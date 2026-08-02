@@ -10,7 +10,15 @@ Cron-friendly generators for the **kiteob Market Report**: EOD session plans and
 | `generate_premarket_report.py` | **09:12** Mon–Fri | `premarket_reports` | `GET /api/market/premarket/report` |
 | `cron_fao_reports.sh` | **21:15** Mon–Fri | `fao_daily_bias` | `GET /api/fao-bias` |
 
-- **EOD** — full session plan (Perplexity + NSE/Kite enrichment). Needs `PERPLEXITY_API_KEY`.
+- **EOD** — full session plan from NSE/Kite enrichment, **deterministic by default** (no LLM).
+  `--llm` re-enables Perplexity narrative (bias badge, theme, mover reasons; needs
+  `PERPLEXITY_API_KEY`). Default flipped 2026-08-02 after a 25-session cross-check
+  (2026-06-15..07-31) found no predictive value in the LLM fields: `overall_bias`
+  neutral/absent 16/25 sessions and 5 hit / 3 miss on directional calls; `gap_read`
+  11/22 = coin flip (snapshotted 16:00 IST, before the overnight session exists);
+  all trade setups were already deterministic pivot math from `finalize.py`.
+  Re-check anytime with `.venv/bin/python score_eod_reports.py` (chain-scores stored
+  reports against the next session's Kite-verified OHLC; read-only).
 - **Pre-market** — gap/breadth snapshot only (no LLM). Best inside NSE pre-open **09:00–09:15**. Embeds prior session **F&O bias** from `fao_daily_bias` when available.
 - **F&O reports** — pulls the daily NSE F&O archive bundle from the CDN, prints a positioning / trade-filter / volatility table, and upserts it to the `fao_daily_bias` collection (`--db`). See `NSE_FAO_REPORTS.md`.
 
@@ -28,6 +36,10 @@ cp .env.example .env   # fill in keys — do not commit .env
 # EOD session plan (dry-run skips Mongo write)
 .venv/bin/python generate_eod_report.py --date today --dry-run
 .venv/bin/python generate_eod_report.py --date today
+.venv/bin/python generate_eod_report.py --date today --llm   # opt back into Perplexity narrative
+
+# Score stored reports: predicted bias/gap/levels vs realized next session
+.venv/bin/python score_eod_reports.py
 
 # Pre-market snapshot
 .venv/bin/python generate_premarket_report.py --dry-run
